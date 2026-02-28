@@ -22,43 +22,93 @@
     body { overflow: hidden; background: #000; font-family: 'Georgia', 'Hiragino Mincho ProN', serif; }
     canvas { display: block; }
 
-    /* ── スタートオーバーレイ ─────────────────────────────── */
+    /* ── スタートオーバーレイ（ランディングページ） ─────────── */
     #overlay {
       position: fixed; inset: 0;
-      background: rgba(12, 10, 8, 0.88);
+      background: rgba(10, 8, 6, 0.93);
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 18px;
+      align-items: center; justify-content: center;
+      gap: 0;
       z-index: 20;
       transition: opacity 0.7s ease;
+      overflow-y: auto;
+      padding: 40px 20px;
     }
     #overlay.hidden { opacity: 0; pointer-events: none; }
     #overlay h1 {
       color: #f0e8d4;
-      font-size: clamp(1.8rem, 4vw, 3rem);
-      letter-spacing: 0.35em;
-      text-shadow: 0 0 40px rgba(255, 210, 130, 0.35);
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      letter-spacing: 0.45em;
+      text-shadow: 0 0 50px rgba(255, 210, 130, 0.40);
+      margin-bottom: 6px;
     }
     #overlay .subtitle {
-      color: #9a8e7e; font-size: 0.9rem; letter-spacing: 0.15em;
+      color: #7a6e60; font-size: 0.82rem; letter-spacing: 0.22em;
+      margin-bottom: 32px;
     }
+
+    /* ── サービス説明エリア ──────────────────────────────── */
+    #serviceDesc {
+      max-width: 440px; width: 100%; text-align: center;
+      border-top: 1px solid rgba(240, 220, 170, 0.16);
+      border-bottom: 1px solid rgba(240, 220, 170, 0.16);
+      padding: 26px 16px;
+      margin-bottom: 28px;
+    }
+    #overlay .description {
+      color: #c4b89e;
+      font-size: clamp(0.88rem, 2vw, 1.0rem);
+      line-height: 2.1;
+      letter-spacing: 0.06em;
+      margin-bottom: 20px;
+    }
+    .price-badge {
+      display: inline-block;
+      color: #f8edce;
+      font-size: 1.35rem;
+      letter-spacing: 0.18em;
+      background: rgba(200, 160, 80, 0.14);
+      border: 1px solid rgba(200, 160, 80, 0.38);
+      border-radius: 3px;
+      padding: 7px 24px;
+      margin-bottom: 14px;
+    }
+    .payment-methods {
+      color: #6a5e50;
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+    }
+
+    /* ── 支払い済みメッセージ ────────────────────────────── */
+    #paidMsg {
+      color: #88c06a;
+      font-size: 0.88rem;
+      letter-spacing: 0.14em;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    /* ── 入場ボタン ──────────────────────────────────────── */
     #startBtn {
-      margin-top: 10px;
-      padding: 13px 52px;
+      padding: 14px 52px;
       background: transparent;
-      border: 1px solid rgba(240, 220, 170, 0.45);
+      border: 1px solid rgba(240, 220, 170, 0.48);
       color: #f0e8d4;
-      font-size: 1rem; letter-spacing: 0.25em;
+      font-size: 1.05rem; letter-spacing: 0.28em;
       cursor: pointer; border-radius: 2px;
       transition: background 0.25s, border-color 0.25s;
+      font-family: inherit;
+      margin-bottom: 18px;
     }
     #startBtn:hover {
-      background: rgba(255, 240, 200, 0.1);
-      border-color: rgba(240, 220, 170, 0.8);
+      background: rgba(255, 240, 200, 0.11);
+      border-color: rgba(240, 220, 170, 0.85);
     }
     #overlay .keyhint {
-      color: #5e5548; font-size: 0.78rem;
+      color: #504840; font-size: 0.76rem;
       letter-spacing: 0.08em; line-height: 1.9;
       text-align: center;
+      display: none;
     }
 
     /* ── クロスヘア ──────────────────────────────────────── */
@@ -122,9 +172,29 @@
 <!-- ─── UI オーバーレイ ─────────────────────────────────────── -->
 <div id="overlay">
   <h1>🏛　美 術 館</h1>
-  <p class="subtitle">VIRTUAL GALLERY ／ 4 PAINTINGS ON DISPLAY</p>
-  <button id="startBtn">入　　場</button>
-  <p class="keyhint">
+  <p class="subtitle">VIRTUAL MUSEUM</p>
+
+  <!-- ── サービス説明（未払い時に表示） ──────────────────── -->
+  <div id="serviceDesc">
+    <p class="description">
+      家にいながら美術館に行けるサービスです。<br>
+      ゆっくり絵を見る時間は、普段なかなか取ることができません。<br>
+      非日常の特別な体験を提供します。
+    </p>
+    <div class="price-badge">入 場 料 &emsp; ¥500</div><br>
+    <p class="payment-methods">
+      💳 クレジットカード &ensp;／&ensp; 📱 コード決済
+    </p>
+  </div>
+
+  <!-- ── 支払い完了メッセージ（支払い済み時に表示） ──────── -->
+  <p id="paidMsg">✓ お支払いが完了しました</p>
+
+  <!-- ── ボタン（未払い：決済へ ／ 支払済み：入場） ─────── -->
+  <button id="startBtn">入場する &emsp; ¥500</button>
+
+  <!-- ── 操作説明（支払い済み時に表示） ──────────────────── -->
+  <p class="keyhint" id="keyhint">
     W / A / S / D ：移動　　マウス：視点回転<br>
     Shift：走る　　ESC：一時停止
   </p>
@@ -217,7 +287,49 @@ const $hint      = document.getElementById('hint');
 const $loading   = document.getElementById('loading');
 const $pauseMsg  = document.getElementById('pauseMsg');
 
-document.getElementById('startBtn').addEventListener('click', () => controls.lock());
+// ═══════════════════════════════════════════════════════════════════
+//  💳 Stripe 決済設定
+//  ▶ Stripeダッシュボードで¥500の決済リンクを作成し、下記に貼り付けてください
+//  ▶ 成功URLには必ず ?paid=true を末尾に付けてください
+//     例: https://typhoon5406.github.io/virtual-museum/museum.html?paid=true
+// ═══════════════════════════════════════════════════════════════════
+const STRIPE_PAYMENT_LINK = ''; // ← 例: 'https://buy.stripe.com/XXXXXXXX'
+
+// ─── 支払い済みチェック（URLパラメータ → sessionStorage） ─────
+{
+  const _p = new URLSearchParams(location.search);
+  if (_p.get('paid') === 'true') {
+    sessionStorage.setItem('museum_paid', '1');
+    history.replaceState(null, '', location.pathname); // URLを綺麗に
+  }
+}
+const isPaid = sessionStorage.getItem('museum_paid') === '1';
+
+// ─── 支払い済みの場合はUIを切り替える ────────────────────────
+if (isPaid) {
+  document.getElementById('serviceDesc').style.display = 'none';
+  document.getElementById('paidMsg').style.display     = 'block';
+  document.getElementById('startBtn').textContent      = '入　　場';
+  document.getElementById('keyhint').style.display     = 'block';
+}
+
+// ─── 入場ボタンのクリックハンドラー ──────────────────────────
+document.getElementById('startBtn').addEventListener('click', () => {
+  if (isPaid) {
+    // 支払い済み → そのまま入場
+    controls.lock();
+  } else if (STRIPE_PAYMENT_LINK) {
+    // 未払い → Stripe決済リンクへリダイレクト
+    location.href = STRIPE_PAYMENT_LINK;
+  } else {
+    // 決済リンク未設定 → 管理者向け警告（公開前に設定してください）
+    alert(
+      '【管理者へ】\nSTRIPE_PAYMENT_LINK が未設定です。\n' +
+      'museum.html の STRIPE_PAYMENT_LINK 変数に\n' +
+      'Stripeダッシュボードで作成した決済リンクを設定してください。'
+    );
+  }
+});
 
 controls.addEventListener('lock', () => {
   $overlay.classList.add('hidden');
