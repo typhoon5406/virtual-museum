@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🏛 Virtual Museum</title>
+
+  <!-- ══════════════════════════════════════════════════════
+       Three.js r160 + PointerLockControls (CDN importmap)
+       ══════════════════════════════════════════════════════ -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: 'Georgia', 'Hiragino Mincho ProN', serif; }
+    canvas { display: block; }
+
+    /* ── スタートオーバーレイ ─────────────────────────────── */
+    #overlay {
+      position: fixed; inset: 0;
+      background: rgba(12, 10, 8, 0.88);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px;
+      z-index: 20;
+      transition: opacity 0.7s ease;
+    }
+    #overlay.hidden { opacity: 0; pointer-events: none; }
+    #overlay h1 {
+      color: #f0e8d4;
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      letter-spacing: 0.35em;
+      text-shadow: 0 0 40px rgba(255, 210, 130, 0.35);
+    }
+    #overlay .subtitle {
+      color: #9a8e7e; font-size: 0.9rem; letter-spacing: 0.15em;
+    }
+    #startBtn {
+      margin-top: 10px;
+      padding: 13px 52px;
+      background: transparent;
+      border: 1px solid rgba(240, 220, 170, 0.45);
+      color: #f0e8d4;
+      font-size: 1rem; letter-spacing: 0.25em;
+      cursor: pointer; border-radius: 2px;
+      transition: background 0.25s, border-color 0.25s;
+    }
+    #startBtn:hover {
+      background: rgba(255, 240, 200, 0.1);
+      border-color: rgba(240, 220, 170, 0.8);
+    }
+    #overlay .keyhint {
+      color: #5e5548; font-size: 0.78rem;
+      letter-spacing: 0.08em; line-height: 1.9;
+      text-align: center;
+    }
+
+    /* ── クロスヘア ──────────────────────────────────────── */
+    #crosshair {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 22px; height: 22px;
+      pointer-events: none; z-index: 10;
+      display: none;
+    }
+    #crosshair.show { display: block; }
+    #crosshair::before {
+      content: ''; position: absolute;
+      width: 2px; height: 22px;
+      background: rgba(255, 255, 255, 0.65);
+      left: 10px; top: 0;
+    }
+    #crosshair::after {
+      content: ''; position: absolute;
+      width: 22px; height: 2px;
+      background: rgba(255, 255, 255, 0.65);
+      top: 10px; left: 0;
+    }
+
+    /* ── 操作ヒント (右下) ───────────────────────────────── */
+    #hint {
+      position: fixed; bottom: 20px; right: 22px;
+      color: rgba(255, 255, 255, 0.38);
+      font-size: 0.72rem; line-height: 2.0;
+      letter-spacing: 0.06em; text-align: right;
+      pointer-events: none; z-index: 10;
+      font-family: 'Courier New', monospace;
+      display: none;
+    }
+    #hint.show { display: block; }
+
+    /* ── ローディング表示 ────────────────────────────────── */
+    #loading {
+      position: fixed; bottom: 22px; left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.45);
+      font-size: 0.8rem; letter-spacing: 0.12em;
+      pointer-events: none; z-index: 20;
+      font-family: sans-serif;
+    }
+
+    /* ── ESC 中断メッセージ ───────────────────────────────── */
+    #pauseMsg {
+      position: fixed; top: 22px; left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.8rem; letter-spacing: 0.1em;
+      pointer-events: none; z-index: 10;
+      display: none; font-family: sans-serif;
+    }
+    #pauseMsg.show { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- ─── UI オーバーレイ ─────────────────────────────────────── -->
+<div id="overlay">
+  <h1>🏛　美 術 館</h1>
+  <p class="subtitle">VIRTUAL GALLERY ／ 4 PAINTINGS ON DISPLAY</p>
+  <button id="startBtn">入　　場</button>
+  <p class="keyhint">
+    W / A / S / D ：移動　　マウス：視点回転<br>
+    Shift：走る　　ESC：一時停止
+  </p>
+</div>
+
+<div id="crosshair"></div>
+<div id="hint">
+  W A S D ：移動<br>
+  マウス：視点回転<br>
+  Shift ：走る<br>
+  ESC ：一時停止
+</div>
+<div id="loading">絵画を読み込んでいます...</div>
+<div id="pauseMsg">一時停止中 ── クリックで再開</div>
+
+<!-- ─── メインスクリプト ──────────────────────────────────────── -->
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+/*
+ * ══════════════════════════════════════════════════════════════════
+ *  🏛 THREE.js 美術館  ─  5エージェント統合版
+ *
+ *  エージェント構成:
+ *   Agent 1: 建築エージェント  ─ 部屋・壁・柱・アーチ
+ *   Agent 2: 照明エージェント  ─ 太陽光・スポット・ガラス天井
+ *   Agent 3: アートワークエージェント ─ 絵画・額装・プレート
+ *   Agent 4: ナビゲーションエージェント ─ WASD・衝突判定
+ *   Agent 5: 統合エージェント  ─ パーティクル・ゴッドレイ・全体
+ * ══════════════════════════════════════════════════════════════════
+ */
+
+// ═══════════════════════════════════════════════════════════════════
+//  ① 定数・寸法パラメータ  (建築エージェント / 統合エージェント)
+// ═══════════════════════════════════════════════════════════════════
+
+const ROOM_W  = 26;    // 部屋の幅   X: -13 ～ +13
+const ROOM_D  = 42;    // 部屋の奥行 Z: -21 ～ +21
+const ROOM_H  = 10;    // 天井の高さ
+const WALL_T  = 0.28;  // 壁の厚み
+
+const EYE_H  = 1.72;   // カメラ高さ（目線）
+const SPEED  = 6.5;    // 歩き速度 (m/s)
+const SPRINT = 12.0;   // 走り速度 (m/s)
+
+// 移動可能領域 (壁との余白)
+const BND = {
+  minX: -(ROOM_W / 2) + 0.65,
+  maxX:  (ROOM_W / 2) - 0.65,
+  minZ: -(ROOM_D / 2) + 0.65,
+  maxZ:  (ROOM_D / 2) - 0.65,
+};
+
+// 柱配置
+const COL_XS = [-7.5, 7.5];
+const COL_ZS = [-13, -5, 3];
+
+// ═══════════════════════════════════════════════════════════════════
+//  ② レンダラー・シーン・カメラ初期化  (統合エージェント)
+// ═══════════════════════════════════════════════════════════════════
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+renderer.toneMapping       = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.18;
+renderer.outputColorSpace  = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);          // スカイブルー背景
+scene.fog = new THREE.FogExp2(0x9fd6f0, 0.010);        // 距離フォグ
+
+const camera = new THREE.PerspectiveCamera(
+  70, innerWidth / innerHeight, 0.05, 250
+);
+camera.position.set(0, EYE_H, 18);
+
+const controls = new PointerLockControls(camera, renderer.domElement);
+scene.add(controls.getObject());
+
+
+// ─── PointerLock UI 制御 ─────────────────────────────────────────
+const $overlay   = document.getElementById('overlay');
+const $crosshair = document.getElementById('crosshair');
+const $hint      = document.getElementById('hint');
+const $loading   = document.getElementById('loading');
+const $pauseMsg  = document.getElementById('pauseMsg');
+
+document.getElementById('startBtn').addEventListener('click', () => controls.lock());
+
+controls.addEventListener('lock', () => {
+  $overlay.classList.add('hidden');
+  $crosshair.classList.add('show');
+  $hint.classList.add('show');
+  $pauseMsg.classList.remove('show');
+});
+controls.addEventListener('unlock', () => {
+  $crosshair.classList.remove('show');
+  $hint.classList.remove('show');
+  $pauseMsg.classList.add('show');
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  ③ 照明システム  (照明エージェント)
+// ═══════════════════════════════════════════════════════════════════
+
+function buildLighting() {
+
+  // 3-A. 環境光 (柔らかい暖色ベース)
+  scene.add(new THREE.AmbientLight(0xfff2e0, 0.60));
+
+  // 3-B. 太陽光 DirectionalLight (影付き、ガラス天井から差し込む)
+  const sun = new THREE.DirectionalLight(0xfffbf0, 2.6);
+  sun.position.set(9, ROOM_H + 18, 8);
+  sun.target.position.set(0, 0, -4);
+  sun.castShadow = true;
+  const sc = sun.shadow.camera;
+  sc.left = -22; sc.right = 22;
+  sc.top  =  26; sc.bottom = -26;
+  sc.near = 1.0; sc.far   = 55;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0003;
+  sun.shadow.normalBias = 0.02;
+  scene.add(sun, sun.target);
+
+  // 3-C. 天空光 HemisphereLight (上空と地面の散乱光)
+  scene.add(new THREE.HemisphereLight(0x87ceeb, 0xd8c8a8, 0.48));
+
+  // 3-D. 補助 PointLight (室内の反射光感)
+  const fill = new THREE.PointLight(0xfff5e0, 0.9, 30, 1.5);
+  fill.position.set(0, ROOM_H - 1.5, -2);
+  scene.add(fill);
+
+  // 3-E. 絵画スポットライト (4枚×各1灯)
+  const spotDefs = [
+    // [灯台] 北壁 左
+    { from: [-5.5, ROOM_H - 0.8, -17.5], at: [-5,   2.6, -(ROOM_D/2)] },
+    // [山]   北壁 右
+    { from: [ 5.5, ROOM_H - 0.8, -17.5], at: [ 5,   2.6, -(ROOM_D/2)] },
+    // [おばさん] 西壁
+    { from: [-9.5, ROOM_H - 0.8,  -7.0], at: [-(ROOM_W/2), 2.8,  -7]  },
+    // [中国女性] 東壁
+    { from: [ 9.5, ROOM_H - 0.8,  -7.0], at: [ (ROOM_W/2), 2.8,  -7]  },
+  ];
+  spotDefs.forEach(({ from, at }) => {
+    const spot = new THREE.SpotLight(0xfff8e8, 2.4);
+    spot.position.set(...from);
+    spot.angle    = Math.PI / 7.5;
+    spot.penumbra = 0.48;
+    spot.decay    = 1.3;
+    spot.castShadow = true;
+    spot.shadow.mapSize.set(512, 512);
+    const tgt = new THREE.Object3D();
+    tgt.position.set(...at);
+    scene.add(tgt);
+    spot.target = tgt;
+    scene.add(spot);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ④ 建築ジオメトリ  (建築エージェント)
+// ═══════════════════════════════════════════════════════════════════
+
+function buildArchitecture() {
+
+  // ── マテリアル定義 ────────────────────────────────────────────
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: 0xf2ede5, roughness: 0.10, metalness: 0.04,
+  });
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0xfaf8f4, roughness: 0.80, metalness: 0.0,
+  });
+  const columnMat = new THREE.MeshStandardMaterial({
+    color: 0xf4f0eb, roughness: 0.28, metalness: 0.06,
+  });
+  const trimMat = new THREE.MeshStandardMaterial({
+    color: 0xe8e2d8, roughness: 0.60, metalness: 0.0,
+  });
+
+  // ── ヘルパー ──────────────────────────────────────────────────
+  function addBox(w, h, d, mat, x, y, z, cast = true, recv = true) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.castShadow    = cast;
+    m.receiveShadow = recv;
+    scene.add(m);
+    return m;
+  }
+
+  // ── 4-A. 床 ────────────────────────────────────────────────────
+  addBox(ROOM_W + WALL_T * 2, WALL_T, ROOM_D + WALL_T * 2,
+    floorMat, 0, -WALL_T / 2, 0, false, true);
+
+  // ── 4-B. 四方の壁 ──────────────────────────────────────────────
+  //  北壁（奥）
+  addBox(ROOM_W + WALL_T * 2, ROOM_H, WALL_T,
+    wallMat, 0, ROOM_H / 2, -(ROOM_D / 2) - WALL_T / 2);
+  //  南壁（手前）
+  addBox(ROOM_W + WALL_T * 2, ROOM_H, WALL_T,
+    wallMat, 0, ROOM_H / 2,  (ROOM_D / 2) + WALL_T / 2);
+  //  西壁
+  addBox(WALL_T, ROOM_H, ROOM_D,
+    wallMat, -(ROOM_W / 2) - WALL_T / 2, ROOM_H / 2, 0);
+  //  東壁
+  addBox(WALL_T, ROOM_H, ROOM_D,
+    wallMat,  (ROOM_W / 2) + WALL_T / 2, ROOM_H / 2, 0);
+
+  // ── 4-C. 幅木（床まわり）────────────────────────────────────────
+  const baseH = 0.14, baseD = 0.04;
+  addBox(ROOM_W, baseH, baseD, trimMat, 0, baseH / 2, -(ROOM_D / 2) + baseD / 2);
+  addBox(ROOM_W, baseH, baseD, trimMat, 0, baseH / 2,  (ROOM_D / 2) - baseD / 2);
+  addBox(baseD, baseH, ROOM_D, trimMat, -(ROOM_W / 2) + baseD / 2, baseH / 2, 0);
+  addBox(baseD, baseH, ROOM_D, trimMat,  (ROOM_W / 2) - baseD / 2, baseH / 2, 0);
+
+  // ── 4-D. 天井コーニス（廻り縁）──────────────────────────────────
+  const cornH = 0.18, cornD = 0.10;
+  addBox(ROOM_W, cornH, cornD, trimMat, 0, ROOM_H - cornH / 2, -(ROOM_D / 2) + cornD / 2, false, false);
+  addBox(ROOM_W, cornH, cornD, trimMat, 0, ROOM_H - cornH / 2,  (ROOM_D / 2) - cornD / 2, false, false);
+  addBox(cornD, cornH, ROOM_D, trimMat, -(ROOM_W / 2) + cornD / 2, ROOM_H - cornH / 2, 0, false, false);
+  addBox(cornD, cornH, ROOM_D, trimMat,  (ROOM_W / 2) - cornD / 2, ROOM_H - cornH / 2, 0, false, false);
+
+  // ── 4-E. 柱（12本：左右各 × 3行）─────────────────────────────────
+  const colH   = ROOM_H - 0.36;
+  const colGeo  = new THREE.CylinderGeometry(0.32, 0.36, colH, 20);
+  const capGeo  = new THREE.BoxGeometry(0.90, 0.20, 0.90);
+  const baseGeo = new THREE.BoxGeometry(0.90, 0.16, 0.90);
+
+  COL_XS.forEach(cx => {
+    COL_ZS.forEach(cz => {
+      // 柱本体
+      const col = new THREE.Mesh(colGeo, columnMat);
+      col.position.set(cx, colH / 2 + 0.16, cz);
+      col.castShadow = col.receiveShadow = true;
+      scene.add(col);
+      // 柱頭
+      const cap = new THREE.Mesh(capGeo, columnMat);
+      cap.position.set(cx, ROOM_H - 0.26, cz);
+      cap.castShadow = cap.receiveShadow = true;
+      scene.add(cap);
+      // 台座
+      const base = new THREE.Mesh(baseGeo, columnMat);
+      base.position.set(cx, 0.08, cz);
+      base.castShadow = base.receiveShadow = true;
+      scene.add(base);
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ⑤ ガラス天井 + 光の柱（ゴッドレイ）  (照明エージェント)
+// ═══════════════════════════════════════════════════════════════════
+
+const godRayMeshes = [];
+
+function buildGlassCeiling() {
+
+  // ── 5-A. ガラスパネル（4列 × 5行）────────────────────────────
+  const COLS = 4, ROWS = 5;
+  const PW = ROOM_W / COLS;   // 6.5m
+  const PD = ROOM_D / ROWS;   // 8.4m
+  const GAP = 0.09;            // フレーム幅
+
+  const glassMat = new THREE.MeshStandardMaterial({
+    color:       0xb0d8f8,
+    transparent: true,
+    opacity:     0.28,
+    roughness:   0.0,
+    metalness:   0.18,
+    side:        THREE.DoubleSide,
+    depthWrite:  false,
+  });
+
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < ROWS; r++) {
+      const gx = -ROOM_W / 2 + PW * (c + 0.5);
+      const gz = -ROOM_D / 2 + PD * (r + 0.5);
+      const panel = new THREE.Mesh(
+        new THREE.BoxGeometry(PW - GAP, 0.05, PD - GAP),
+        glassMat
+      );
+      panel.position.set(gx, ROOM_H + 0.025, gz);
+      panel.receiveShadow = true;
+      scene.add(panel);
+    }
+  }
+
+  // ── 5-B. 天井フレーム（アルミ格子）─────────────────────────────
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x8fa0b0, roughness: 0.28, metalness: 0.72,
+  });
+  // 横桟
+  for (let r = 0; r <= ROWS; r++) {
+    const fz = -ROOM_D / 2 + PD * r;
+    const bar = new THREE.Mesh(
+      new THREE.BoxGeometry(ROOM_W + WALL_T * 2, 0.12, GAP), frameMat
+    );
+    bar.position.set(0, ROOM_H, fz);
+    bar.castShadow = bar.receiveShadow = true;
+    scene.add(bar);
+  }
+  // 縦桟
+  for (let c = 0; c <= COLS; c++) {
+    const fx = -ROOM_W / 2 + PW * c;
+    const bar = new THREE.Mesh(
+      new THREE.BoxGeometry(GAP, 0.12, ROOM_D + WALL_T * 2), frameMat
+    );
+    bar.position.set(fx, ROOM_H, 0);
+    bar.castShadow = bar.receiveShadow = true;
+    scene.add(bar);
+  }
+
+  // ── 5-C. 光の柱（ゴッドレイ）─────────────────────────────────
+  const rayMat = new THREE.MeshBasicMaterial({
+    color:      0xfffce8,
+    transparent: true,
+    opacity:    0.058,
+    depthWrite: false,
+    blending:   THREE.AdditiveBlending,
+    side:       THREE.FrontSide,
+  });
+
+  // 光柱の配置（ガラスパネル中心の直下）
+  const rayPositions = [
+    [-6.5, -16.0],  // 列1行1
+    [ 0.0, -16.0],  // 列2行1
+    [ 6.5, -16.0],  // 列3行1
+    [-6.5,  -7.5],  // 列1行3
+    [ 6.5,  -7.5],  // 列3行3
+    [ 0.0,   1.0],  // 中央
+  ];
+
+  rayPositions.forEach(([rx, rz]) => {
+    const mat = rayMat.clone();
+    const ray = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.72, ROOM_H * 0.97, 14, 1, true),
+      mat
+    );
+    ray.position.set(rx, ROOM_H * 0.485, rz);
+    ray.renderOrder = 2;
+    scene.add(ray);
+    godRayMeshes.push(ray);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ⑥ 塵パーティクル  (統合エージェント)
+// ═══════════════════════════════════════════════════════════════════
+
+let dustGeo = null;
+let dustVel = null;
+let dustPhase = null;
+const DUST_N = 1600;
+
+function buildDust() {
+  const pos   = new Float32Array(DUST_N * 3);
+  dustVel     = new Float32Array(DUST_N * 3);
+  dustPhase   = new Float32Array(DUST_N);
+
+  const HW = ROOM_W / 2 * 0.88;
+  const HD = ROOM_D / 2 * 0.88;
+
+  for (let i = 0; i < DUST_N; i++) {
+    // 光柱付近 60%、それ以外 40%
+    const nearRay = Math.random() < 0.60;
+    const rx = nearRay ? ([-6.5, 0, 6.5][Math.floor(Math.random() * 3)]) : 0;
+    const rz = nearRay ? ([-16, -7.5, 1][Math.floor(Math.random() * 3)]) : 0;
+    const spread = nearRay ? 1.8 : HW;
+
+    pos[i*3]   = rx + (Math.random() - 0.5) * spread * 2;
+    pos[i*3+1] = Math.random() * ROOM_H * 0.88 + 0.25;
+    pos[i*3+2] = rz + (Math.random() - 0.5) * (nearRay ? spread * 2 : HD * 2);
+
+    dustVel[i*3]   = (Math.random() - 0.5) * 0.0028;
+    dustVel[i*3+1] = (Math.random() - 0.5) * 0.0014;
+    dustVel[i*3+2] = (Math.random() - 0.5) * 0.0028;
+    dustPhase[i]   = Math.random() * Math.PI * 2;
+  }
+
+  dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+
+  const dustMat = new THREE.PointsMaterial({
+    color:           0xfff8e0,
+    size:            0.032,
+    sizeAttenuation: true,
+    transparent:     true,
+    opacity:         0.52,
+    depthWrite:      false,
+    blending:        THREE.AdditiveBlending,
+  });
+
+  scene.add(new THREE.Points(dustGeo, dustMat));
+}
+
+function updateDust(t) {
+  if (!dustGeo) return;
+  const pos = dustGeo.attributes.position.array;
+  const HW = ROOM_W / 2 - 0.5;
+  const HD = ROOM_D / 2 - 0.5;
+
+  for (let i = 0; i < DUST_N; i++) {
+    const i3 = i * 3;
+    const sway = Math.sin(t * 0.22 + dustPhase[i]) * 0.0012;
+    pos[i3]   += dustVel[i3]   + sway;
+    pos[i3+1] += dustVel[i3+1] + Math.sin(t * 0.16 + dustPhase[i] * 1.3) * 0.0008;
+    pos[i3+2] += dustVel[i3+2] + sway * 0.7;
+
+    if (pos[i3]   >  HW)          pos[i3]   = -HW;
+    if (pos[i3]   < -HW)          pos[i3]   =  HW;
+    if (pos[i3+1] >  ROOM_H * 0.9) pos[i3+1] = 0.2;
+    if (pos[i3+1] <  0.1)          pos[i3+1] = ROOM_H * 0.85;
+    if (pos[i3+2] >  HD)           pos[i3+2] = -HD;
+    if (pos[i3+2] < -HD)           pos[i3+2] =  HD;
+  }
+  dustGeo.attributes.position.needsUpdate = true;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ⑦ 絵画展示  (アートワークエージェント)
+//
+//  配置レイアウト：
+//   北壁 (Z=-21):  [灯台] X=-5   [山]   X=+5    ← 風景横長 × 2
+//   西壁 (X=-13):  [おばさん] Z=-7               ← 人物縦長
+//   東壁 (X=+13):  [中国女性] Z=-7               ← 人物縦長
+// ═══════════════════════════════════════════════════════════════════
+
+function buildPaintings() {
+  const texLoader = new THREE.TextureLoader();
+  let loadedCount = 0;
+  const totalPaintings = 4;
+
+  // 絵画定義リスト
+  const PAINTINGS = [
+    {
+      // ── 風景：海辺の灯台（北壁 左）
+      file:  'painting_lighthouse.png',
+      posX:  -5.5,
+      posY:   3.0,
+      posZ:  -(ROOM_D / 2) + 0.06,
+      rotY:   0,           // 北壁：+Z方向へ向く（入口側を向く）
+      dispH:  3.2,         // 表示高さ (m) ─ aspect ratio から幅を自動計算
+    },
+    {
+      // ── 風景：険しい山（北壁 右）
+      file:  'painting_mountain.png',
+      posX:   5.5,
+      posY:   3.0,
+      posZ:  -(ROOM_D / 2) + 0.06,
+      rotY:   0,
+      dispH:  3.2,
+    },
+    {
+      // ── 人物：海外のおばさん（西壁）
+      file:  'painting_lady.png',
+      posX:  -(ROOM_W / 2) + 0.06,
+      posY:   3.1,
+      posZ:  -7.0,
+      rotY:   Math.PI / 2,   // 西壁：+X方向へ向く（中央を向く）
+      dispH:  3.8,
+    },
+    {
+      // ── 人物：中国の女性（東壁）
+      file:  'painting_chinese_woman.png',
+      posX:   (ROOM_W / 2) - 0.06,
+      posY:   3.1,
+      posZ:  -7.0,
+      rotY:  -Math.PI / 2,   // 東壁：-X方向へ向く（中央を向く）
+      dispH:  3.8,
+    },
+  ];
+
+  // 説明プレート用マテリアル
+  const plateMat = new THREE.MeshStandardMaterial({
+    color: 0xece8e0, roughness: 0.70, metalness: 0.0,
+  });
+
+  PAINTINGS.forEach((p) => {
+    texLoader.load(
+      p.file,
+
+      // ── onLoad ────────────────────────────────────────────────
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.minFilter  = THREE.LinearMipmapLinearFilter;
+        tex.magFilter  = THREE.LinearFilter;
+        tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 16);
+
+        // テクスチャの縦横比から実際のサイズを計算
+        const aspect = tex.image.width / tex.image.height;
+        const pH = p.dispH;
+        const pW = pH * aspect;
+
+        const group = new THREE.Group();
+
+        // ─ 絵画本体（画像にフレームが内包されているのでそのまま表示）
+        const paintMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(pW, pH),
+          new THREE.MeshStandardMaterial({
+            map:       tex,
+            roughness: 0.84,
+            metalness: 0.0,
+          })
+        );
+        paintMesh.castShadow    = true;
+        paintMesh.receiveShadow = true;
+        group.add(paintMesh);
+
+        // ─ 壁面影板（絵画後ろのわずかな影で立体感を演出）
+        const shadowPad = new THREE.Mesh(
+          new THREE.PlaneGeometry(pW + 0.14, pH + 0.14),
+          new THREE.MeshStandardMaterial({
+            color:       0x050505,
+            transparent: true,
+            opacity:     0.22,
+            roughness:   1.0,
+            metalness:   0.0,
+          })
+        );
+        shadowPad.position.z = -0.012;
+        group.add(shadowPad);
+
+        // ─ 説明プレート（絵画下）
+        const plateW  = Math.min(pW * 0.46, 1.1);
+        const plateH  = 0.14;
+        const plateMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(plateW, plateH, 0.022),
+          plateMat
+        );
+        plateMesh.position.set(0, -(pH / 2) - 0.11, 0.01);
+        plateMesh.castShadow = true;
+        group.add(plateMesh);
+
+        // ─ グループをワールド座標に配置
+        group.position.set(p.posX, p.posY, p.posZ);
+        group.rotation.y = p.rotY;
+        scene.add(group);
+
+        loadedCount++;
+        if (loadedCount >= totalPaintings) {
+          $loading.style.display = 'none';
+        }
+      },
+
+      // ── onProgress（未使用）
+      undefined,
+
+      // ── onError
+      (err) => {
+        console.warn(`[アートワークエージェント] 絵画ロード失敗: ${p.file}`, err);
+        loadedCount++;
+        if (loadedCount >= totalPaintings) {
+          $loading.style.display = 'none';
+        }
+      }
+    );
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ⑧ キー入力 & 移動 + 衝突判定  (ナビゲーションエージェント)
+// ═══════════════════════════════════════════════════════════════════
+
+const keyState = {};
+window.addEventListener('keydown', e => { keyState[e.code] = true; });
+window.addEventListener('keyup',   e => { keyState[e.code] = false; });
+
+const _moveDir = new THREE.Vector3();
+
+function updateMovement(delta) {
+  if (!controls.isLocked) return;
+
+  // 入力ベクトル
+  _moveDir.set(0, 0, 0);
+  if (keyState['KeyW'] || keyState['ArrowUp'])    _moveDir.z -= 1;
+  if (keyState['KeyS'] || keyState['ArrowDown'])  _moveDir.z += 1;
+  if (keyState['KeyA'] || keyState['ArrowLeft'])  _moveDir.x -= 1;
+  if (keyState['KeyD'] || keyState['ArrowRight']) _moveDir.x += 1;
+
+  if (_moveDir.lengthSq() > 0) {
+    _moveDir.normalize();
+    const spd = (keyState['ShiftLeft'] || keyState['ShiftRight']) ? SPRINT : SPEED;
+    controls.moveRight(   _moveDir.x * spd * delta);
+    controls.moveForward(-_moveDir.z * spd * delta);
+  }
+
+  const pos = controls.getObject().position;
+
+  // ── 壁境界クランプ ─────────────────────────────────────────────
+  pos.x = THREE.MathUtils.clamp(pos.x, BND.minX, BND.maxX);
+  pos.z = THREE.MathUtils.clamp(pos.z, BND.minZ, BND.maxZ);
+  pos.y = EYE_H;    // Y固定（ジャンプなし）
+
+  // ── 柱との円形衝突判定 ──────────────────────────────────────────
+  const COL_R = 0.72;   // 柱半径 + プレイヤー半径
+  COL_XS.forEach(cx => {
+    COL_ZS.forEach(cz => {
+      const dx = pos.x - cx;
+      const dz = pos.z - cz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < COL_R * COL_R) {
+        const d = Math.sqrt(d2) || 0.001;
+        pos.x = cx + (dx / d) * COL_R;
+        pos.z = cz + (dz / d) * COL_R;
+      }
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ⑨ リサイズ対応
+// ═══════════════════════════════════════════════════════════════════
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  ⑩ アニメーションループ  (統合エージェント)
+// ═══════════════════════════════════════════════════════════════════
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  const time  = clock.getElapsedTime();
+
+  // 移動 & 衝突
+  updateMovement(delta);
+
+  // 塵パーティクル更新
+  updateDust(time);
+
+  // ゴッドレイ輝度パルス
+  godRayMeshes.forEach((ray, i) => {
+    ray.material.opacity = 0.042 + 0.020 * Math.sin(time * 0.48 + i * 1.15);
+  });
+
+  renderer.render(scene, camera);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ⑪ 初期化  ─  各エージェントモジュールを順序通りに呼び出す
+// ═══════════════════════════════════════════════════════════════════
+
+(function init() {
+  buildLighting();       // [照明エージェント]
+  buildArchitecture();   // [建築エージェント]
+  buildGlassCeiling();   // [照明エージェント]
+  buildDust();           // [統合エージェント]
+  buildPaintings();      // [アートワークエージェント]
+  animate();             // [ナビゲーション + 統合エージェント]
+})();
+
+</script>
+</body>
+</html>
