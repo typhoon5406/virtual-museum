@@ -165,6 +165,58 @@
       display: none; font-family: sans-serif;
     }
     #pauseMsg.show { display: block; }
+
+    /* ── 法的表記・特定商取引法 ──────────────────────────── */
+    #legalSection {
+      max-width: 480px; width: 100%;
+      margin-top: 28px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 18px;
+      text-align: left;
+    }
+    #legalSection summary {
+      color: #5a5248;
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      list-style: none;
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    #legalSection summary::-webkit-details-marker { display: none; }
+    #legalSection summary::before { content: '▶ '; font-size: 0.6rem; }
+    #legalSection[open] summary::before { content: '▼ '; }
+    #legalSection summary:hover { color: #8a7e70; }
+    .legal-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 0.68rem;
+      color: #5a5248;
+      letter-spacing: 0.04em;
+      line-height: 1.8;
+    }
+    .legal-table th {
+      width: 38%;
+      padding: 3px 8px 3px 0;
+      vertical-align: top;
+      font-weight: normal;
+      white-space: nowrap;
+      color: #4a4440;
+    }
+    .legal-table td {
+      padding: 3px 0;
+      vertical-align: top;
+      color: #6a6058;
+    }
+    .privacy-text {
+      font-size: 0.66rem;
+      color: #4a4440;
+      line-height: 1.8;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
   </style>
 </head>
 <body>
@@ -198,6 +250,24 @@
     W / A / S / D ：移動　　マウス：視点回転<br>
     Shift：走る　　ESC：一時停止
   </p>
+
+  <!-- ── 特定商取引法に基づく表記 ／ プライバシーポリシー ── -->
+  <details id="legalSection">
+    <summary>特定商取引法に基づく表記 ／ プライバシーポリシー</summary>
+    <table class="legal-table">
+      <tr><th>販売者名</th><td>大風 槙輝</td></tr>
+      <tr><th>連絡先</th><td>typhoon5406@gmail.com</td></tr>
+      <tr><th>所在地</th><td>香川県高松市</td></tr>
+      <tr><th>販売価格</th><td>¥500（税込）</td></tr>
+      <tr><th>支払い方法</th><td>クレジットカード（Visa / Mastercard / JCB / Amex）、Apple Pay、Google Pay、コード決済</td></tr>
+      <tr><th>サービス提供時期</th><td>決済完了後、即時ご利用いただけます</td></tr>
+      <tr><th>返品・キャンセル</th><td>デジタルコンテンツの性質上、決済完了後の返金・キャンセルはお受けできません</td></tr>
+      <tr><th>動作環境</th><td>WebGL に対応したブラウザ（Chrome / Safari / Firefox / Edge 最新版推奨）</td></tr>
+    </table>
+    <p class="privacy-text">
+      【プライバシーポリシー】決済情報はStripe, Inc.により安全に管理されます。当サービスはお客様のカード情報を保持しません。取得した個人情報（メールアドレス等）は決済処理以外の目的には使用せず、第三者への提供は行いません。
+    </p>
+  </details>
 </div>
 
 <div id="crosshair"></div>
